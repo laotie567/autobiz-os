@@ -63,13 +63,16 @@ ENV
 fi
 
 if [ "$MODE" = "docker" ]; then
-  AB() { docker compose -f docker-compose.app.yml run --rm --build app "$@"; }
+  # 预构建镜像在 ghcr.io：优先拉取，拉取失败（网络受限）自动回退本地构建
+  docker compose -f docker-compose.app.yml pull app >/dev/null 2>&1 \
+    || { say "镜像拉取失败，回退本地构建（首次需几分钟）"; docker compose -f docker-compose.app.yml build app >/dev/null; }
+  AB() { docker compose -f docker-compose.app.yml run --rm app "$@"; }
 else
   AB() { uv run autobiz "$@"; }
 fi
 
 # ── 4. 初始化 ──────────────────────────────────────────
-say "第 4 步 / 5：初始化数据库 + 导入示例行业地图（首次会构建镜像 / 下载模型，请耐心）"
+say "第 4 步 / 5：初始化数据库 + 导入示例行业地图"
 AB init
 AB seed --example
 

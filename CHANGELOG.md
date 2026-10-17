@@ -3,6 +3,14 @@
 本项目的语义化版本：主版本 = 本体模型破坏性变更；次版本 = 新行动 / 新域；修订 = 修复。
 每个版本的迁移（`autobiz/migrations/`）会在此标注，升级步骤见 docs/UPGRADE.md。
 
+## 1.0.1（2026-10-17）安装链补全：ghcr 镜像发布
+
+### 修复
+- Dockerfile 补齐运行时资产（`ontology/`、`prompts/`、`config/models.yaml`、`templates/`）——此前镜像构建后容器里 `autobiz check` 直接失败
+
+### 新增
+- 应用镜像发布到 `ghcr.io/laotie567/autobiz-os`（国际仓，内置向量模型）；`install.sh` docker 模式改为默认拉镜像，拉取失败自动回退本地构建
+
 ## 1.0.0（2026-10-17）首个正式版（含 S1–S4 与发布前加固）
 
 ### 修复（2026-10-17 评审整改）

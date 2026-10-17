@@ -17,8 +17,9 @@ services:
     healthcheck: { test: ["CMD", "pg_isready", "-U", "autobiz"], interval: 5s, retries: 20 }
 
   app:
+    # 预构建镜像发布在 ghcr.io（国际仓）；build 段保留作拉取失败时的本地回退
+    image: ghcr.io/laotie567/autobiz-os:1.0.1
     build: { context: ., dockerfile: docker/Dockerfile }
-    image: autobiz-os:local
     container_name: autobiz-app
     env_file: .env
     environment:

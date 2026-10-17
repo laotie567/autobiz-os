@@ -17,13 +17,13 @@ bash scripts/install.sh
 ```
 
 脚本会问 5 个问题（称呼 / 一句话业务 / 目标客户 / API Key / 模式），然后自动：
-建工作区（默认 `~/AutoBiz`）→ 生成随机数据库密码 → 起数据库 → 构建应用镜像（内置向量模型，
-构建几分钟）→ 初始化 → 导入示例行业地图 → 引导设置审批 PIN → 体检。
+建工作区（默认 `~/AutoBiz`）→ 生成随机数据库密码 → 起数据库 → 拉取应用镜像（`ghcr.io/laotie567/autobiz-os`，
+内置向量模型；拉取失败自动回退本地构建）→ 初始化 → 导入示例行业地图 → 引导设置审批 PIN → 体检。
 
 之后所有命令用 `./bin/autobiz <命令>`（在容器里执行，本机不需要 Python）。
 
-**国内网络**：向量模型走 hf-mirror.com（默认已配）；Docker 镜像拉取慢时配置国内 registry mirror；
-`git clone` 慢可用 Gitee 镜像仓库。
+**网络**：应用镜像在 ghcr.io（国际仓）；拉取慢或受限时脚本会自动回退本地构建，也可手动 `docker pull` 后再跑安装。
+向量模型默认走 huggingface.co（网络受限可设 HF_ENDPOINT=https://hf-mirror.com）。
 
 ## 路径 B：本机跑 Python（开发者 / 想改代码）
 
@@ -55,6 +55,6 @@ uv run autobiz doctor
 | 现象 | 处理 |
 |---|---|
 | 5433 端口被占 | `.env` 设 `AUTOBIZ_DB_PORT=5434` 并同步改 DATABASE_URL |
-| 镜像构建下载模型超时 | 重跑一次（断点续传）；或先 `docker pull python:3.12-slim` |
+| 镜像拉取慢 / 失败 | 脚本会自动回退本地构建；或手动 `docker pull ghcr.io/laotie567/autobiz-os:1.0.1` 后重跑 |
 | doctor 报迁移待应用 | `autobiz migrate` |
 | doctor 报审批 PIN 未设 | `autobiz setup-pin`（分发/多人使用必设） |
