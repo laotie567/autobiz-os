@@ -1,0 +1,33 @@
+# 模型路由表（ADR-0008，docs/architecture/model-quality.md 第四节）。
+# 代码只按"任务类型"要模型，换模型只改这里。
+providers:
+  deepseek: { base_url: "https://api.deepseek.com", api_key_env: DEEPSEEK_API_KEY, price_per_mtok: { in: 2.0, out: 8.0 } }
+  doubao:   { base_url: "https://ark.cn-beijing.volces.com/api/v3", api_key_env: ARK_API_KEY, price_per_mtok: { in: 0.8, out: 2.0 } }
+  # price_per_mtok：每百万 token 人民币单价（H-4 成本记账用；以各官网当日价格为准修订）
+
+tasks:
+  # prompt: 固定提示词版本（D-2），升级提示词须显式改这里并过回归评测；用户可在
+  # $AUTOBIZ_HOME/prompts/overrides/ 放同名文件覆盖，不必改内核。
+  # 2026-10 DeepSeek 在售：deepseek-flash（快、便宜）/ deepseek-v4-pro（强）；deepseek-chat 已是 flash 的别名
+  relevance:   { provider: deepseek, model: deepseek-flash,  temperature: 0.0, prompt: relevance.v2 }
+  extract:     { provider: deepseek, model: deepseek-flash,  temperature: 0.0, prompt: extract.v3 }   # 2026-10-02 用户决定全部用 flash（成本），须过回归评测
+  merge_judge: { provider: deepseek, model: deepseek-flash,  temperature: 0.0 }
+  # 售前：单次量小、质量要求高（直接给客户看），用主力档
+  analyze_requirement: { provider: deepseek, model: deepseek-v4-pro, temperature: 0.2, prompt: analyze_requirement.v1 }
+  proposal:            { provider: deepseek, model: deepseek-v4-pro, temperature: 0.3, prompt: proposal.v1 }
+  desensitize_topic:   { provider: deepseek, model: deepseek-flash,  temperature: 0.5, prompt: desensitize_topic.v1 }
+  # S2 内容快产线：每周约 50 稿 + 改稿，直接对外，用主力档（单稿约 0.02–0.05 元，见 llm_usage）
+  content_draft:       { provider: deepseek, model: deepseek-v4-pro, temperature: 0.7, prompt: content_draft.v1 }
+  plan_topics:         { provider: deepseek, model: deepseek-v4-pro, temperature: 0.6, prompt: plan_topics.v1 }
+
+# 向量化：本地模型（数据不出本机；DeepSeek 无向量接口）。换模型须全量重算向量。
+embedding: { provider: local, model: BAAI/bge-small-zh-v1.5, dim: 512 }
+
+# 抽取质量阈值（初值，评测后校准）
+thresholds:
+  relevance_min: 4          # 相关度 < 4 不抽取
+  confidence_review: 0.6    # 置信度低于此值进待确认队列
+
+# H-4：每日模型预算（人民币）。超出后模型任务拒绝执行，抽取等批处理立即停止。
+budget:
+  daily_cny: 50

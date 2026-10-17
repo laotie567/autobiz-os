@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# bin/autobiz —— 无需在本机装 Python：所有命令在应用容器里执行。
+# 用法与本地一致：./bin/autobiz status | q overview | act ... | doctor | approve <码>
+set -euo pipefail
+cd "$(dirname "$0")/.."
+docker compose -f docker-compose.app.yml run --rm app "$@"

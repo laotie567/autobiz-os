@@ -1,0 +1,186 @@
+# 售前域：从"客户甩来一句模糊需求"到"方案成交"（2026-10-04，本人提出）。
+# 循环：需求碎片 → 需求分析（匹配知识地图）→ 售前方案（含架构章节）→ 成交转项目 → 结项沉淀案例；
+# 方案状态即销售阶段（草稿 / 已发送 / 已接受 / 未成交），不再单设商机（2026-10-04 精简）。
+#       需求分析同时可脱敏转为抖音选题（获客）。
+# 原则：本体负责找（痛点 / 案例 / 组件 / 产品 / 价格），模型负责写；方案只能引用已确认知识。
+
+enums:
+  req_channel:      { wechat: 微信聊天, offline: 线下或电话, meeting: 会议纪要, douyin: 抖音私信评论, other: 其他 }
+  analysis_status:  { draft: 草稿, confirmed: 已确认 }
+  proposal_status:  { draft: 草稿, sent: 已发送, accepted: 已接受, rejected: 未成交, superseded: 已被新版替代 }
+  # S4（ADR-0018）：政企 / 国企项目的节奏与计价
+  procurement_stage: { intent: 意向, initiation: 立项, feasibility: 可研, approval: 报批, procurement: 采购, signed: 签约 }
+  pricing_mode:     { product_sum: 按产品标价, man_day: 人天计价, custom: 一事一议总价 }
+  decision_status:  { active: 有效, superseded: 已替代 }
+
+object_types:
+  requirement_note:
+    label: 需求碎片
+    domain: presales
+    title: title
+    embed: [title, content]
+    properties:
+      title:       text!
+      content:     longtext!     # 原话 / 截图转文字 / 纪要，保持原样
+      channel:     enum:req_channel
+      captured_at: datetime
+
+  requirement_analysis:
+    label: 需求分析
+    domain: presales
+    title: title
+    embed: [title, business_goal, pains_summary]
+    initial: { status: draft, version: 1 }   # B-1：status 走 confirm_analysis 闸门
+    properties:
+      title:          text!
+      version:        int
+      status:         enum:analysis_status
+      business_goal:  longtext   # 客户真正想要的经营结果
+      current_state:  longtext   # 现状与流程
+      pains_summary:  longtext   # 真实痛点（区分说出来的诉求与背后的问题）
+      constraints:    longtext   # 预算 / 数据 / 人员 / 时间
+      open_questions: longtext   # 待澄清问题清单（下一次沟通要问的）
+      fit_signals:    longtext   # 适配度信号：正向 / 风险，只列信号不下结论（筛选闸口由本人判断）
+      scope_options:  longtext   # 可选的切入范围（小切口 → 完整方案）
+      generated_by:   text       # 模型@提示词版本
+
+  proposal:
+    label: 售前方案
+    domain: presales
+    title: title
+    embed: [title, summary]
+    initial: { status: draft, version: 1 }   # B-1：status 走发布 / 成交 / 出新版
+    properties:
+      title:         text!
+      version:       int
+      status:        enum:proposal_status
+      summary:       longtext
+      body:          longtext    # 方案正文（Markdown）
+      phases:        json        # [{name, weeks, deliverables, pct}]，成交时转为里程碑
+      price:         number      # 由所选服务产品价格计算，不由模型编
+      payment_terms: longtext    # 付款节点（历史教训：大项目分期须本人逐笔确认）
+      doc_url:       url         # 飞书文档
+      slides_url:    url         # 飞书幻灯片
+      generated_by:  text
+      pricing:       enum:pricing_mode     # S4：计价方式（缺省按产品标价）
+      man_days:      json                  # 人天计价明细 [{role, days, rate}]，金额由代码算
+      entity:        text                  # 签约 / 落款主体（如：某某科技有限公司）
+      procurement_stage: enum:procurement_stage   # 政企采购阶段：意向 → 立项 → 可研 → 报批 → 采购 → 签约
+
+  decision:
+    label: 拍板口径
+    domain: presales
+    title: title
+    embed: [title, statement]
+    initial: { status: active }
+    properties:
+      title:      text!
+      statement:  longtext!                # 客户拍板的口径原话，如"49.2 万是一期建设成本，不是营收"
+      scope:      text                     # 适用范围（财务 / 技术 / 宣传 / 全部）
+      decided_by: text                     # 谁拍的板
+      decided_at: datetime
+      forbid:     text[]                   # 方案里禁止出现的说法（代码校验），如"满足信创"
+      status:     enum:decision_status
+
+
+link_types:
+  req_of:            { from: requirement_note, to: [organization, lead], label: 需求来自 }
+  analysis_of:       { from: requirement_analysis, to: organization, label: 分析的客户 }
+  analysis_from:     { from: requirement_analysis, to: requirement_note, label: 依据碎片 }
+  analysis_pains:    { from: requirement_analysis, to: pain_point, label: 对应痛点 }
+  analysis_refs:     { from: requirement_analysis, to: [case, method, agent_component, service_product, tool], label: 参考 }
+  proposal_for:      { from: proposal, to: requirement_analysis, label: 方案依据 }
+  proposal_lead:     { from: proposal, to: lead, label: 方案来源线索 }
+  proposal_offers:   { from: proposal, to: service_product, label: 方案产品 }
+  proposal_cites:    { from: proposal, to: [case, method, agent_component], label: 方案引用, require_verified: true }
+  supersedes:        { from: proposal, to: proposal, label: 替代旧版 }
+  project_from_proposal: { from: project, to: proposal, label: 依据方案 }
+  decision_for:      { from: decision, to: organization, label: 口径所属客户 }
+  decision_replaces: { from: decision, to: decision, label: 替代旧口径 }
+
+action_types:
+  capture_requirement:
+    domain: presales
+    direct: true
+    label: 丢需求（随手记客户需求）
+    mode: manual
+    params: { customer: "text!", text: "longtext!", channel: "enum:req_channel" }
+    handler: capture_requirement      # customer 可填客户名或线索 id；客户不存在则新建
+  analyze_requirement:
+    direct: true
+    label: 分析需求
+    mode: manual
+    target: organization
+    params: { focus: longtext }
+    handler: analyze_requirement      # 汇总该客户全部需求碎片 + 知识地图匹配 → AI 写分析（草稿）
+  confirm_analysis:
+    label: 确认需求分析（人工闸门）
+    mode: manual
+    gate: true
+    target: requirement_analysis
+    precondition: { status: [draft] }
+    set: { status: confirmed }
+  draft_proposal:
+    direct: true
+    label: 生成售前方案
+    mode: manual
+    target: requirement_analysis
+    precondition: { status: [confirmed] }
+    params: { products: "text[]", with_architecture: bool, notes: longtext,
+              pricing: "enum:pricing_mode", man_days: json, total: number, entity: text,
+              procurement_stage: "enum:procurement_stage" }
+    handler: draft_proposal           # 只引用已确认知识；遵守客户拍板口径；金额由代码按计价方式算（产品标价 / 人天 / 总价）
+  revise_proposal:
+    direct: true
+    label: 修改方案（出新版本）
+    mode: manual
+    target: proposal
+    precondition: { status: [draft, sent] }
+    params: { feedback: "longtext!" }
+    handler: revise_proposal
+  publish_proposal:
+    label: 发布方案到飞书
+    mode: manual
+    target: proposal
+    precondition: { status: [draft, sent] }
+    params: { slides: bool }
+    handler: publish_proposal         # 生成飞书文档（可选幻灯片），状态置为已发送
+  accept_proposal:
+    label: 方案成交
+    mode: manual
+    gate: true
+    target: proposal
+    precondition: { status: [draft, sent] }
+    params: { amount: number }
+    handler: accept_proposal          # 建项目，方案各阶段转为里程碑（含应收金额）
+  requirement_to_topic:
+    label: 需求转选题（脱敏）
+    mode: manual
+    gate: true
+    target: requirement_analysis
+    handler: requirement_to_topic     # 去掉客户名 / 人名 / 金额，保留行业 + 痛点 + 解法思路
+
+  record_decision:
+    domain: presales
+    label: 记录客户拍板口径（直接写入）
+    mode: manual
+    direct: true
+    params: { customer: "text!", statement: "longtext!", scope: text, decided_by: text, forbid: "text[]", replaces: text }
+    handler: record_decision          # 之后该客户的方案生成 / 改稿都把有效口径当硬约束，forbid 里的说法出现即重写
+  set_procurement_stage:
+    label: 更新采购阶段
+    mode: manual
+    direct: true
+    target: proposal
+    params: { stage: "enum:procurement_stage!" }
+    set: { procurement_stage: $param.stage }
+
+functions:
+  decision_ledger:
+    label: 口径台账
+    description: 某客户全部有效的拍板口径（含禁用说法），出方案 / 汇报前先看
+    params: { customer: "text!" }
+  presales_board:
+    label: 售前看板
+    description: 每个客户的需求推进到哪一步（碎片 → 分析 → 方案 → 成交），以及下一步该做什么
+    params: {}

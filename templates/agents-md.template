@@ -1,0 +1,120 @@
+<!-- 由 `autobiz agents-md` 生成（K-2）：类型清单 / 闸门清单 / 域数量来自本体，称呼来自 profile。
+     改这份文件请改 templates/agents-md.template 或本体，不要直接改生成物。 -->
+
+# AutoBiz OS · Agent 工作说明
+
+本文件写给在本目录工作的 AI Agent（豆包工作 / Codex / Claude Code 等）。用户是${owner_name}，全程用中文交流。
+
+## 这是什么
+
+${owner_name}公司的业务本体：${domains_flow} → 沉淀回知识，${domains_count} 个业务域连成一张网。
+数据在本机数据库里，**唯一的读写方式是下面的 `autobiz` 命令**。不要直接改数据库，不要改 `ontology/` 下的本体定义（那是架构变更，需用户和 Claude 评审）。
+
+运行前提：数据库容器在运行（`docker compose up -d`）。命令都在本目录执行，输出为 JSON。
+
+## 一、查询（只读，随便用）
+
+```bash
+uv run autobiz q overview                                   # 总览 + 待办（"今天有什么要处理的"）
+uv run autobiz brief                                        # 今日简报（目标进度 + 今天必做）；brief --weekly 看上周复盘
+uv run autobiz q goal_progress                              # 经营目标：本月收入 / 线索、本周发布与各形态、今日真人口播
+uv run autobiz q followup_today                             # 今天该跟进 / 已超期的线索与客户
+uv run autobiz q revenue '{"month":"2026-10"}'              # 某月实收，按业务线 / 收入类型分；不填 month 为本月
+uv run autobiz q review_queue                               # 待审稿件（要点 + 体检提示）
+uv run autobiz q content_plan                               # 未来 7 天内容排期、各形态对照配比、真人口播缺口
+uv run autobiz q piece_package '{"id":"content_piece_xxxx"}'  # 一条内容件的完整创作包（可直接粘贴进小云雀 / 豆包）
+uv run autobiz q format_performance                         # 近 30 天各形态 / 各关键词的发布、线索、线索率，与配比建议
+uv run autobiz q unattributed_leads                         # 不知道是哪条内容带来的线索（待认领）
+uv run autobiz q conversion_stats                           # 线索实际去向：咨询 / 成交 / 流失（满 30 天给实测转化率）
+uv run autobiz q search '{"query":"门店怎么用AI拍探店视频","types":["case","method"]}'
+uv run autobiz q industry_map '{"industry":"实体门店"}'     # 行业全景：痛点→案例/方法/产品，及空白
+uv run autobiz q industry_coverage                          # 各行业资料 / 痛点 / 案例覆盖度，哪里该补资料
+uv run autobiz q learning_gaps                              # 我下一步该学什么
+uv run autobiz q capability_map                             # 我的能力地图
+uv run autobiz q content_performance                        # 哪条内容带来了客户
+uv run autobiz q pipeline                                   # 销售漏斗
+uv run autobiz q presales_board                             # 售前看板：每个客户的需求推进到哪一步、下一步做什么
+uv run autobiz q receivables                                # 应收账款：合同额 / 已收 / 未收，哪些该催款
+uv run autobiz q reuse_candidates                           # 可产品化的资产
+uv run autobiz q get_object '{"id":"tool_xxxx"}'            # 对象详情与直接关系
+uv run autobiz q trace '{"id":"lead_xxxx","depth":6}'       # 沿关系链溯源
+```
+
+可用类型（search 的 types，共 ${types_count} 类）：${types_line}。
+
+**回答业务问题前必须先查。** 查不到就说"本体里没有"，不要编。
+
+## 二、写入（先预览，再确认）
+
+```bash
+uv run autobiz actions [knowledge|market|customer|presales|delivery|general]   # 可执行的行动和参数
+uv run autobiz describe <类型>                                        # 对象类型的属性、可选值、关系
+uv run autobiz act <行动> '<JSON参数>'            # 第一步：预览，不写入
+uv run autobiz act <行动> '<JSON参数>' --confirm  # 第二步：用户同意后执行
+uv run autobiz note "要记下的想法"                  # 随手记，直接写入
+uv run autobiz req "客户名" "需求原文" [wechat|offline|meeting|douyin]   # 丢需求，直接写入
+```
+
+规则：
+1. 除 `note`、`req` 和 `actions` 输出里标着「无需预览」的行动外，任何写入都先不带 `--confirm` 预览，用一两句话告诉用户将新建 / 修改 / 连接什么，用户同意后再用**完全相同的参数**加 `--confirm`。**这是引擎强制的**：你的默认角色是 agent，没预览过或预览后对象被改过，`--confirm` 会被直接拒绝。
+2. 参数名和枚举值照抄 `actions` / `describe` 的输出，不要自己编。
+3. 返回 `"ok": false` 时把 `error` 原文告诉用户，不要假装成功，不要绕过。
+4. **人工闸门**（`actions` 输出里标着"人工闸门"，当前共 ${gates_count} 个：${gate_names}）你**不能自行确认**。流程：预览 → 把返回的**审批码**转告用户 → 用户在终端执行 `autobiz approve <审批码>` → 用户说"批好了"后，参数里带 `"approval":"<审批码>"` 加 `--confirm` 执行。审批码一次性，与参数绑定。
+5. 生命周期字段（各对象的 status、里程碑的 received/done 等）由流程行动维护，`update_object` 直接写会被拒绝——这是设计，不是 bug。
+6. JSON 参数用单引号包住整个 JSON，里面用双引号；中文直接写，不要转义。
+
+## 三、质量底线
+
+- `已确认: false` 的知识是 AI 从资料抽取**或经通用命令写入**的，未经用户确认。引用时标"（未确认）"；写对外内容 / 课件 / 方案只用已确认的知识。
+- **用到时再确认**：出方案时结果里会列出「相关但未确认的知识」，把它们讲给用户，用户认可后用 `verify_object '{"targets":["id1","id2"]}'`（闸门，走审批码流程）一次确认，再 `revise_proposal` 即可引用。不需要也不要去逐条清理全部未确认知识。
+- 不编造本体里没有的数据、案例、金额。
+- 引用对象时写出名称。
+
+## 四、常用流程
+
+${video_section}**经营与线索（每天）**：三条业务线——`online` 线上获客业务（只有它计入月收入目标）、`offline` 线下项目、`partner` 合伙业务
+1. 用户说"今天干嘛 / 看下简报"：`uv run autobiz brief`，把【今天必做】逐条讲给用户。
+2. 来了线索（私信、评论、截图）：`act quick_lead '{"who":"昵称","platform":"douyin","keyword":"选址","text":"原话"}'`（直接写入，默认明天跟进）。截图里多条就逐条录。没有平台来源的线索要问用户属于哪条业务线并填 `business_line`。
+3. 跟进过了：`act log_contact '{"target":"<线索或客户id>","note":"聊了什么","next_in_days":3}'`；不再跟进：`act mark_lead_lost '{"target":"<线索id>","reason":"原因"}'`。
+4. 收到钱（skill、咨询、工作台、会员等小额成交）：`act record_order '{"title":"选址 skill","amount":899,"kind":"product","customer":"<客户/线索id或名字，可不填>"}'`。项目分期款仍走 `record_payment`。退款是闸门 `refund_order`。
+5. 做完顾问咨询：`act record_consultation '{"target":"<客户id>","verdict":"go","reason":"判断依据","hours":1,"fee":900}'`（verdict：go 接 / no_go 不接 / watch 观察；带 fee 会同时登记咨询费订单）。没咨询就出方案只会软提醒，不拦。
+6. 登记发布时带上内容形态：`mark_published` 参数加 `"format":"live_talk"`（真人口播 / image_post 图文混排 / article 图文长文…，见 `describe publish_record`），周发布配比和每日真人口播才统计得到。
+
+**内容快产线（每周 / 每天）**：系统出初稿 → 用户审 → 系统改好 → 用户在小云雀 / 豆包 / 自己拍出品 → 发布登记
+1. 周日晚（或用户说"出下周选题"）：`act plan_week '{"count":12}'`，把候选选题和建议形态讲给用户挑。
+2. 用户挑定后：`act finalize_topics '{"targets":["topic_id1","topic_id2",…]}'`——**闸门**，一个审批码定一批（审批流程见上文规则 4）。
+3. 定档后排产：`act schedule_pieces '{"start":"下周一日期"}'`，按 profile 的形态配比和"每天真人口播条数"生成 7 天的内容件；`q content_plan` 看排期与缺口。
+4. 起草：`uv run autobiz draft 10`（批量，4 路并发；也可逐条 `act draft_piece '{"target":"<内容件id>"}'`）。起草后代码自动体检（禁说词 / 绝对化用语 / 无依据的自述 / 篇幅 / 客户名），不过会自动重写一次，仍不过标"体检未过"、不进审稿队列。
+5. 用户说"审稿"：`q review_queue`，**一次给 3–5 条**，每条讲钩子、封面、开头几句和体检提示。用户说"过" → `act review_piece '{"target":"…","decision":"approve"}'`；给意见 → `decision":"changes","feedback":"用户原话"` 后马上 `act revise_piece '{"target":"…"}'`，改好的稿会回到待审队列，复审时告诉用户"改了什么"。批量改稿：`uv run autobiz draft 10 --revise`。
+6. 用户要出品：`q piece_package '{"id":"…"}'`，把「创作包」原样给用户（视频类有「小云雀指令」整段可粘贴；图文类有逐张生图提示词）。出完 `act mark_produced`，发了 `act publish_piece '{"target":"…","url":"…"}'`（同一条发多个平台就每个平台登记一次，platform 不同）。
+7. **回填数据**（只强制 7 天）：用户发来创作者后台截图时，逐条识别标题 / 播放 / 点赞 / 评论 / 收藏 / 涨粉 / 私信数，
+   一次性 `act backfill_batch '{"stage":"7d","items":[{"match":"标题或链接或发布记录id","platform":"douyin","views":1200,"likes":30,"leads_dm":2}]}'`。
+   返回「未写入」的条目是匹配不唯一或找不到：把候选讲给用户，确认后用发布记录 id 作 match 重填。**不要猜**。
+8. **线索来源**：`quick_lead` 带上私信关键词时，系统会自动归到近 14 天带同一关键词的发布；没归上的用 `q unattributed_leads` 列给用户，
+   用户说是哪条后 `act attribute_lead '{"target":"<线索id>","publish":"<发布记录id>"}'`。周一看周报的「配比建议」，用户同意后再改 profile.yaml。
+9. **事实纪律**：稿子里"我"的经历与数字只能来自个人事实台账 `config/claims.yaml`。用户说"我其实做过 XX"时，请他把这条加进台账，不要在稿子里绕过体检。数字人口播（avatar_talk）未启用，不要排产。
+
+**政企 / 国企项目（线下项目线 offline）**：国有平台公司 / 政府项目都归线下项目线
+1. 新客户建好后，`org_type` 标 `soe`（国企 / 平台公司）或 `gov`（政府 / 事业单位），`business_line` 标 `offline`（会议 / 线下渠道丢的需求会自动标 offline）。
+2. **客户拍板的口径要马上记**：用户说"他们定了 XX""这个说法不能用"时，`act record_decision '{"customer":"<客户id或名>","statement":"原话","scope":"财务","decided_by":"谁拍的","forbid":["禁止出现的说法"]}'`。口径变了用 `replaces` 指向旧口径。之后这个客户的方案生成 / 改稿都会把有效口径当硬约束，禁用说法出现会自动重写。出方案或汇报前先 `q decision_ledger '{"customer":"…"}'` 过一遍。
+3. 政企方案不按产品标价：`draft_proposal` 带 `"pricing":"man_day","man_days":[{"role":"开发","days":200,"rate":1500}]`（人天计价）或 `"pricing":"custom","total":492000`（一事一议总价），可加 `"entity":"签约主体全称"`、`"procurement_stage":"initiation"`。阶段推进用 `act set_procurement_stage '{"target":"<方案id>","stage":"feasibility"}'`（意向 → 立项 → 可研 → 报批 → 采购 → 签约）。
+4. Word / PPT / Excel 四件套仍用各项目自己的生成脚本出，产物链接回填到方案的 `slides_url` 或里程碑 `deliverables`。
+
+${opc_section}**售前（最常用）**：客户需求进来 → 推成方案 → 成交
+1. 用户转述 / 甩来客户的话、微信截图、语音、会议纪要：截图和语音由你先识别成文字，**原样**用 `req "客户名" "原文" 渠道` 存进去，不要改写、不要总结。同一客户可以反复丢。
+2. 用户说"分析一下 XX 的需求"：`act analyze_requirement '{"target":"<客户id>"}'`（约 1 分钟）。把分析里的「待澄清问题」和「适配度信号」重点讲给用户——接不接由用户判断，你不要替他下结论。
+3. 用户修改后说"分析没问题"：`confirm_analysis`（闸门）。
+4. "出方案"：`act draft_proposal '{"target":"<分析id>","products":["服务产品名"],"with_architecture":true}'`。产品名照抄 `q search '{"query":"...","types":["service_product"]}'` 的结果；方案文件同时存到 `proposals/客户名/`。提醒用户：付款节点必须他本人确认。
+5. 客户有反馈：`revise_proposal`（出新版本）；发给客户：`publish_proposal`（先预览，生成飞书文档）；成交：`accept_proposal`（闸门，自动建项目，方案各阶段变成带应收金额的里程碑）。
+6. 需求本身可以拍成抖音：`requirement_to_topic`（闸门，自动去掉客户名 / 人名 / 金额），预览内容即最终入库内容。
+
+
+- 内容（单条、不走快产线时）：propose_topic → finalize_topic（闸门）→ 发布后 mark_published（target 是选题，带 format）→ backfill_metrics（stage 填 24h / 72h / 7d）
+- 客户：create_lead（带 source_publish 记来源内容）→ convert_lead（转为客户）→ 进入上面的售前流程
+- 交付与收款：complete_milestone（阶段完成，会提示未收款）→ record_payment（登记到账）→ complete_project（闸门，自动沉淀"自己交付"的案例回到行业地图）
+- 学习：log_practice（相关工具掌握度自动升为"实操过"）；改掌握度用 update_object
+- 代码交付在独立的工厂工作台完成，本系统只记录：把仓库地址写到 Agent组件的 repo_url，把交付链接写到里程碑的 deliverables
+
+## 五、维护命令（仅在用户要求时运行）
+
+`uv run autobiz extract N`（AI 抽取 N 篇未处理资料，调用 DeepSeek，计费）、`import-obsidian`、`status`。

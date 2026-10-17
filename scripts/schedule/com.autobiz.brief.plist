@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 每日简报：每天 08:00 推到飞书。电脑休眠错过时，唤醒后 launchd 会补跑一次。 -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.autobiz.brief</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>SCRIPTS_DIR/brief.sh</string></array>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+</dict></plist>

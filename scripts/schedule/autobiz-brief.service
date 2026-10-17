@@ -1,0 +1,5 @@
+[Unit]
+Description=AutoBiz daily brief to Feishu
+[Service]
+Type=oneshot
+ExecStart=/bin/bash SCRIPTS_DIR/brief.sh

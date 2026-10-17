@@ -1,0 +1,44 @@
+# 抽取回归评测：来自 2026-10-02 Claude 对 DeepSeek（extract.v1）首批 12 篇输出的审计（evals/audit-2026-10-02.md）。
+# 换模型 / 改提示词前必须跑：uv run autobiz eval   每篇跑 2 次，全部「稳定通过」才能上线（ADR-0008）。
+# 模型在 temperature=0 下仍有随机性（2026-10-02 实测），单次通过不算数。
+# 上线门槛：准确性规则（forbid / no_case / 行业 / audience / 相关度）任何一次失败都不放行；require（召回）偶发漏抽可容忍。
+#
+# 规则：
+#   relevance_max / relevance_min    相关度上下限
+#   no_case: true                    不得抽出任何案例
+#   forbid:  [{type, name, exact}]   不得出现名称包含 name（exact=true 时为完全相等）的该类对象
+#   require: [{type, name}]          必须出现（召回检查）
+#   pain_industry_forbid: [{pain, industry}]   名称包含 pain 的痛点不得关联到该行业
+#   pain_industry_require: [{pain, industry}]
+#   pain_audience: [{pain, audience}]           名称包含 pain 的痛点必须是该 audience（* 表示全部）
+
+cases:
+  - doc: 100%免费 3分钟拿下Muse.ai账号
+    relevance_max: 3
+  - doc: 6000字故事 ｜ AI 产品搞钱入门教程
+    no_case: true
+  - doc: AI Agent 副业实操：5 个现在就能跑通的变现路径
+    pain_industry_forbid: [{ pain: 普通人, industry: 教培 }, { pain: Listing, industry: 外贸（贸易型） }]
+    pain_industry_require: [{ pain: Listing, industry: 跨境电商 }, { pain: 客服, industry: 通用（跨行业） }]
+    pain_audience: [{ pain: Listing, audience: customer }]
+  - doc: 100粉冷启动，30天跑到5M曝光
+    forbid: [{ type: concept, name: 三逼 }]
+    pain_audience: [{ pain: "*", audience: creator }]
+  - doc: AI 短片制作全流程小白入门教程
+    forbid: [{ type: concept, name: 一致性, exact: true }]   # 「人物一致性」是合法概念，只挡泛词
+  - doc: AI 能帮你拆账号，不能帮你长出产品感
+    forbid: [{ type: tool, name: 小红书 }]
+  - doc: 7 万人围观的 AI 剪辑片子
+    require: [{ type: tool, name: SeeCut }]
+    pain_audience: [{ pain: "*", audience: creator }]
+  - doc: 15 个刷屏案例一网打尽
+    require: [{ type: tool, name: ffmpeg }]
+  - doc: 0 门槛接入Jev 模型
+    relevance_max: 4          # 领额度 / 接入指南，按 relevance.v2 规则属低价值
+  - doc: 6000字故事｜带你入门 GPT-6 Astra
+    no_case: true
+    require: [{ type: tool, name: GPT-6 Astra }]
+  - doc: 600万播放的“AI视频”是怎么做出来的
+    require: [{ type: tool, name: Blender }]
+  - doc: 99%的人把夸克这个 Skill 当下载工具
+    relevance_min: 5

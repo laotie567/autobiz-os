@@ -1,0 +1,152 @@
+# 交付域：产品 / 项目 / 里程碑（含收款） / 可复用 Agent 组件。精简版（2026-10-04）。
+# 里程碑兼任付款节点：方案成交时按阶段生成，金额由方案价格按比例计算；收款记在里程碑上。
+# 代码生产在独立的工厂工作台（ADR-0011），本系统只记录组件与交付状态，不存源代码。
+# 飞轮：交付 → 结项沉淀案例与组件 → 回到知识域。
+
+enums:
+  product_type:    { membership: 会员社群, skill: 现成skill, custom_dev: 定制开发, consulting: 顾问咨询, training: 培训, coaching: 陪跑, fde: FDE驻场 }
+  project_status:  { active: 进行中, paused: 暂停, done: 已完成 }
+  component_status: { prototype: 原型, reusable: 可复用, productized: 已产品化 }
+  # S1：订单（小额高频成交，不走"方案 → 项目"）。membership/workbench 预留给社群与定制工作台
+  order_kind:      { product: 现成产品/skill, consulting: 顾问咨询, custom: 定制, workbench: 定制工作台, membership: 社群会员, other: 其他 }
+  order_status:    { paid: 已收款, refunded: 已退款 }
+
+object_types:
+  service_product:
+    label: 服务产品
+    domain: delivery
+    title: name
+    embed: [name, outline]
+    properties:
+      name:         text!
+      product_type: enum:product_type
+      price:        number              # 区间价取下限，详情写 outline
+      funnel_step:  int                 # 升单漏斗位置，越大越深（02-品牌DNA 服务体系）
+      outline:      longtext
+
+  project:
+    label: 交付项目
+    domain: delivery
+    title: title
+    embed: [title, summary]
+    properties:
+      title:           text!
+      status:          enum:project_status
+      contract_amount: number
+      started_at:      datetime
+      summary:         longtext
+      retrospective:   longtext         # 结项复盘
+      business_line:   enum:business_line   # S1：成交时继承客户的业务线
+
+  milestone:
+    label: 里程碑
+    domain: delivery
+    title: title
+    managed: [received, received_at, done]      # B-1：收款与完成走 record_payment / reverse_payment / complete_milestone
+    initial: { received: 0, done: false }
+    properties:
+      title:        text!
+      deliverables: longtext            # 本阶段交付物（飞书文档链接等）
+      due:          datetime
+      done:         bool
+      amount:       number              # 本阶段应收
+      received:     number              # 已收
+      received_at:  datetime
+
+  order:
+    label: 订单
+    domain: delivery
+    title: title
+    initial: { status: paid }
+    properties:
+      title:         text!
+      amount:        number!            # 实收金额（元）
+      kind:          enum:order_kind
+      business_line: enum:business_line
+      buyer:         text               # 买家称呼（个人买家不必建客户）
+      channel:       text               # 成交渠道：星球 / 小店 / 微信转账 …
+      paid_at:       datetime
+      status:        enum:order_status
+      refunded_at:   datetime
+      refund_reason: text
+
+  agent_component:
+    label: Agent组件
+    domain: delivery
+    title: name
+    embed: [name, description]
+    properties:
+      name:        text!                # 如"选址分析 skill""抖音账号监控"
+      description: longtext
+      repo_url:    url                  # 代码在工厂工作台的仓库地址
+      status:      enum:component_status
+
+link_types:
+  project_of:        { from: project, to: organization, label: 项目客户 }
+  milestone_of:      { from: milestone, to: project, label: 所属项目 }
+  project_uses:      { from: project, to: [method, agent_component, tool], label: 项目使用 }
+  project_produced:  { from: project, to: [case, method, agent_component], label: 项目沉淀 }        # 交付 → 知识（飞轮闭环）
+  product_includes:  { from: service_product, to: agent_component, label: 产品包含 }
+  productizes:       { from: agent_component, to: method, label: 产品化自方法 }
+  solves:            { from: [agent_component, service_product], to: pain_point, label: 解决痛点 }
+  order_of:          { from: order, to: [organization, lead], label: 订单客户 }
+  order_product:     { from: order, to: service_product, label: 订单产品 }
+
+action_types:
+  record_payment:
+    label: 登记收款
+    mode: manual
+    target: milestone
+    params: { amount: "number!", received_at: datetime }
+    handler: record_payment       # C-2：金额必须大于 0；冲正走 reverse_payment 闸门
+  reverse_payment:
+    label: 收款冲正（人工闸门）
+    mode: manual
+    gate: true
+    target: milestone
+    params: { amount: "number!", reason: "text!" }
+    handler: reverse_payment      # C-2：正数登记、从已收中扣减，留痕
+  record_order:
+    domain: delivery
+    label: 登记订单（收款即登记，直接写入）
+    mode: manual
+    direct: true
+    params: { title: "text!", amount: "number!", kind: "enum:order_kind!", customer: text, product: text,
+              business_line: "enum:business_line", buyer: text, channel: text, paid_at: datetime }
+    handler: record_order           # customer 填客户 / 线索 id 或客户名（找不到就只记 buyer）；业务线默认继承客户
+  refund_order:
+    label: 订单退款（人工闸门）
+    mode: manual
+    gate: true
+    target: order
+    precondition: { status: [paid] }
+    params: { reason: "text!" }
+    set: { status: refunded, refunded_at: $now, refund_reason: $param.reason }
+  complete_milestone:
+    label: 里程碑完成
+    mode: manual
+    target: milestone
+    params: { deliverables: longtext }
+    handler: complete_milestone
+  complete_project:
+    label: 项目结项并沉淀
+    mode: manual
+    gate: true
+    target: project
+    precondition: { status: [active, paused] }
+    params: { retrospective: "longtext!", outcome: "longtext!" }
+    handler: complete_project       # 置为已完成 → 自动生成"自己交付"的案例（已确认），连到客户行业与痛点
+
+functions:
+  receivables:
+    label: 应收账款
+    description: 每个项目的合同额、已收、未收；已完成未收款、已逾期、7 天内到期的里程碑（该催款了）
+    params: {}
+  revenue:
+    label: 收入汇总
+    description: 某月实收（订单 + 里程碑回款 − 冲正 − 退款），按业务线与收入类型分组；month 形如 2026-10，缺省为本月
+    params: { month: text }
+  reuse_candidates:
+    label: 可复用资产
+    description: 被多个项目使用或沉淀的方法 / Agent组件，按复用次数排序——产品化候选
+    params: {}

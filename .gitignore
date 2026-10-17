@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.cache/
+backups/
+data/
+.DS_Store
+# 用户工作区内容不进仓库（内核只读原则）
+proposals/
+outbox/
+seed/
+videos/
+config/profile.yaml

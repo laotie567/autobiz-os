@@ -1,0 +1,61 @@
+# 用户档案模板（D-1）：复制到 $AUTOBIZ_HOME/config/profile.yaml 后按自己情况修改。
+# 代码与提示词里的称呼、业务定位、集成偏好全部从这里注入——内核不含任何个人信息。
+# 未配置时按本文件的值运行（中性默认）；`autobiz doctor` 会提示补配。
+
+owner:
+  name: 老板                    # 对外称呼，出现在提示词、行动提示、方案落款
+  company: ""
+
+business:
+  one_liner: 为中小企业提供 AI 咨询与落地服务   # 一句话业务定位，喂给需求分析 / 方案提示词
+  audience: 中小企业老板                        # 目标客户
+  delivery_preference: 客户易维护的国内方案      # 技术选型偏好（写入方案架构建议）
+  currency: CNY
+
+content:
+  platforms: [douyin, shipinhao, xiaohongshu]
+
+integrations:
+  publish: local_md             # 方案发布渠道：local_md（默认，零依赖）| feishu（需 lark-cli）
+  backup_remote: none           # 云备份：none | feishu
+  approval: pin                 # 闸门审批：pin（终端审批码 + PIN）
+
+paths:
+  clippings_dir: ""             # Obsidian 剪藏目录（import-obsidian 用），如 ~/Obsidian/Clippings
+
+privacy:
+  send_customer_names_to_llm: false   # false = 发模型前假名化（J-2，当前版本仅提示，未实现自动假名化）
+
+locale:
+  timezone: Asia/Shanghai        # 驾驶舱"本月 / 本周 / 今天"按这个时区切分
+
+# 经营目标（ADR-0015）：0 = 未设置，驾驶舱只显示实际值。`autobiz brief` 每天对照目标与时间进度。
+goals:
+  monthly_revenue: 0             # 月收入目标（元），只统计 revenue_lines 里的业务线
+  revenue_lines: [online]        # online 线上获客业务 | offline 线下项目 | partner 合伙业务
+  monthly_leads: 0               # 月新增线索目标，只统计 lead_lines
+  lead_lines: [online]
+  weekly_posts: 0                # 周发布条数目标（所有形态合计）
+  daily_live_talk: 0             # 每日真人口播条数（0 = 不单独盯）
+  format_mix: {}                 # 每周形态配比，如 { live_talk: 14, image_post: 8, article: 6 }
+                                 # 形态：live_talk 真人口播 / avatar_talk 数字人口播 / motion 动效 / science 科普
+                                 #       explainer 讲解 / image_video 图文视频 / image_post 图文混排 / article 图文长文
+
+# 品牌约束（ADR-0016）：内容快产线的提示词与代码体检都读这里
+brand:
+  account: ""                    # 账号名（署名 / 栏目条）
+  slogan: ""                     # 视频结尾 slogan
+  voice: 实在、具体、不夸张，给能落地的做法
+  catchphrases: []               # 招牌句，自然使用
+  banned_words: [惊呆了, 炸裂, 封神, yyds]   # 出现即体检不过
+  ip_character: ""               # 出镜 / 画面人物设定（如动漫 IP 形象描述）
+  audience_pain: ""              # 受众最怕什么、最受什么刺激（一两句）
+  platform_styles:
+    douyin: 9:16 竖屏，节奏快，前 3 秒必须有钩子
+    shipinhao: 3:4，真诚、现场感
+    xiaohongshu: 3:4 图文，杂志感、清单感
+
+# 数字人（预留）：接口跑通后改 provider 并 enabled: true，再把 goals.format_mix.avatar_talk 调上来
+avatar:
+  provider: none
+  enabled: false

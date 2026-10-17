@@ -1,0 +1,177 @@
+# 知识域：系统的复利中心（ADR-0007）。行业 → 痛点 → 案例 / 方法 / 工具 / 概念 的地图，加上我的学习成长。
+
+enums:
+  mastery:          { heard: 听说过, studied: 学过, practiced: 实操过, delivered: 交付过 }
+  industry_stance:  { target: 目标行业, watching: 观察中, excluded: 排除 }
+  case_origin:      { external: 外部案例, own: 自己交付 }
+  method_maturity:  { idea: 想法, validated: 验证过, productized: 已产品化 }
+  source_status:    { unprocessed: 未处理, extracted: 已抽取, irrelevant: 与业务无关, failed: 抽取失败 }
+  pain_audience:    { customer: 客户业务痛点, creator: 创作者痛点 }   # 客户 = 企业/商家经营卡点；创作者 = 我与同行做 AI 内容/产品时的问题
+
+object_types:
+  source_doc:
+    label: 来源文档
+    domain: knowledge
+    title: title
+    embed: [title, summary]
+    properties:
+      title:          text!
+      source_channel: enum:source_channel
+      source_url:     url
+      author:         text
+      content:        longtext
+      captured_at:    datetime
+      status:         enum:source_status
+      relevance:      number        # 0-10；< 4 不抽取
+      summary:        longtext
+
+  concept:
+    label: 概念
+    domain: knowledge
+    title: name
+    extractable: true
+    embed: [name, definition]
+    properties:
+      name:        text!
+      definition:  longtext
+      mastery:     enum:mastery
+
+  tool:
+    label: 工具
+    domain: knowledge
+    title: name
+    extractable: true
+    embed: [name, description]
+    properties:
+      name:        text!
+      vendor:      text
+      description: longtext
+      url:         url
+      pricing:     text
+      mastery:     enum:mastery
+
+  industry:
+    label: 行业
+    domain: knowledge
+    title: name
+    embed: [name, notes]
+    properties:
+      name:    text!
+      stance:  enum:industry_stance
+      notes:   longtext
+
+  pain_point:
+    label: 痛点
+    domain: knowledge
+    title: title
+    extractable: true
+    embed: [title, description]
+    properties:
+      title:        text!
+      description:  longtext
+      audience:     enum:pain_audience   # 行业地图只统计客户业务痛点；创作者痛点服务于我自己的学习与选题
+      willingness_to_pay: enum:willingness
+
+  case:
+    label: 案例
+    domain: knowledge
+    title: title
+    extractable: true
+    embed: [title, problem, solution, outcome]
+    properties:
+      title:        text!
+      case_origin:  enum:case_origin
+      subject:      text          # 案例主体（外部案例用；自己的案例通过 organization 关系）
+      problem:      longtext
+      solution:     longtext
+      outcome:      longtext      # 效果，尽量量化
+
+  method:
+    label: 方法
+    domain: knowledge
+    title: title
+    extractable: true
+    embed: [title, steps]
+    properties:
+      title:     text!
+      steps:     longtext
+      maturity:  enum:method_maturity
+
+  insight:
+    label: 洞见
+    domain: knowledge
+    title: title
+    embed: [title, body]
+    properties:
+      title:    text!
+      body:     longtext
+
+  practice_log:
+    label: 实操记录
+    domain: knowledge
+    title: title
+    embed: [title, what_i_did, lessons]
+    properties:
+      title:       text!
+      done_at:     datetime
+      what_i_did:  longtext
+      result:      longtext
+      lessons:     longtext
+      publishable: bool
+
+link_types:
+  extracted_from:  { from: [concept, tool, pain_point, case, method], to: source_doc, label: 抽取自 }
+  pain_in:         { from: pain_point, to: industry,   label: 所属行业 }
+  case_in:         { from: case,       to: industry,   label: 案例行业 }
+  case_solves:     { from: case,       to: pain_point, label: 解决 }
+  case_uses:       { from: case,       to: [tool, concept, method], label: 用到 }
+  method_targets:  { from: method,     to: pain_point, label: 针对 }
+  method_uses:     { from: method,     to: [tool, concept], label: 使用 }
+  tool_implements: { from: tool,       to: concept,    label: 体现概念 }
+  insight_about:   { from: insight,    to: [concept, tool, industry, pain_point, case, method, source_doc], label: 关于 }
+  practice_on:     { from: practice_log, to: [tool, concept, method], label: 实操对象 }
+
+action_types:
+  ingest_source:
+    domain: knowledge
+    label: 收录来源文档
+    mode: auto
+    params: { title: "text!", source_channel: "text!", content: "longtext!", source_url: url, author: text, captured_at: datetime }
+    handler: ingest_source          # 按 source_url / 内容指纹去重
+  extract_knowledge:
+    label: AI 抽取知识
+    mode: auto
+    target: source_doc
+    precondition: { status: [unprocessed, failed] }
+    handler: extract_knowledge      # 相关度闸门 → 分类型抽取 → 引文校验 → 合并判定（docs/architecture/model-quality.md）
+  capture_note:
+    domain: knowledge
+    direct: true
+    label: 随手记
+    mode: manual
+    params: { text: "longtext!", about: "text[]" }
+    handler: capture_note
+  log_practice:
+    domain: knowledge
+    label: 记录实操
+    mode: manual
+    params: { title: "text!", what_i_did: "longtext!", result: longtext, lessons: longtext, targets: "text[]", publishable: bool }
+    handler: log_practice           # targets 掌握度低于"实操过"的自动升级
+
+functions:
+  industry_map:
+    label: 行业全景
+    description: 某行业的 痛点 → 案例 / 方法 / 工具 全景，并标出"有痛点无案例"的空白和我的掌握度
+    params: { industry: "text!" }
+  learning_gaps:
+    label: 学习缺口
+    description: 目标行业痛点的解法所用到的工具 / 概念中，我还没实操过的，按涉及痛点数量排序
+    params: { industry: text, limit: int }
+  industry_coverage:
+    label: 行业覆盖度
+    description: 每个目标 / 观察行业的来源资料、客户痛点、案例（外部 / 自有）、产品数量，标出最该补资料的行业
+    params: {}
+  capability_map:
+    label: 能力地图
+    description: 我的概念 / 工具按掌握度分布，附最近实操记录
+    params: {}

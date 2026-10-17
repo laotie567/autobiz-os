@@ -1,0 +1,207 @@
+# 市场域：内容获客。精简版（2026-10-04，奥卡姆剃刀）：选题 → 发布记录，两层即可。
+# 母版 / 变体 / 资产 / 快照四层已移除：实际流程是在抖音直接发视频；各时点数据作为发布记录的字段，
+# 保留 24h / 72h / 7d 播放以看衰减。内容生成在系统外（renders/ 等工具），发布后回系统登记。
+
+enums:
+  topic_status:    { candidate: 候选池, scheduled: 已定档, published: 已发布, archived: 已退回 }
+  # S2（ADR-0016）：内容件状态机。planned 排产 → 起草后体检：过 → in_review 待审 / 不过 → check_failed
+  #   → 你审：approved 通过 / changes_requested 待修改 → 改稿后回 in_review → produced 已出品 → published 已发布
+  piece_status:    { planned: 已排产, in_review: 待审, check_failed: 体检未过, changes_requested: 待修改,
+                     approved: 已通过, produced: 已出品, published: 已发布, dropped: 放弃 }
+  review_decision: { approve: 通过, changes: 要修改 }
+
+object_types:
+  topic:
+    label: 选题
+    domain: market
+    title: title
+    embed: [title, angle]
+    initial: { status: candidate }    # B-1：status 由定档/登记发布推进；通用新建只能写候选
+    properties:
+      title:            text!
+      angle:            longtext
+      status:           enum:topic_status
+      target_platforms: text[]
+      suggested_formats: text[]     # S2：周计划建议拆成哪些形态（content_format 键）
+      finalized_by:     text
+      finalized_at:     datetime
+
+  publish_record:
+    label: 发布记录
+    domain: market
+    title: title
+    properties:
+      title:         text!
+      platform:      enum:platform
+      format:        enum:content_format   # S1：内容形态（周发布配比 / 每日真人口播统计用）
+      keyword:       text                  # S3：这条内容的私信关键词（线索按关键词自动归因）
+      account:       text
+      url:           url
+      published_at:  datetime
+      views_24h:     int
+      views_72h:     int
+      views_7d:      int
+      likes:         int           # 以下为最近一次回填的数值
+      comments:      int
+      favorites:     int
+      new_followers: int
+      completion_rate: number
+      leads_dm:      int           # 私信咨询数
+      leads_contact: int           # 加微 / 入群数
+
+  content_piece:
+    label: 内容件
+    domain: market
+    title: title
+    embed: [title]
+    initial: { status: planned, version: 0 }
+    managed: [status, version, package, package_text, check_report, history, feedback, approved_at, produced_url]
+    properties:
+      title:        text!
+      format:       enum:content_format!
+      platform:     enum:platform
+      planned_date: datetime          # 排期日（可改）
+      status:       enum:piece_status
+      version:      int
+      package:      json              # 结构化创作包（按形态）
+      package_text: longtext          # 可直接粘贴进小云雀 / 豆包 / 提词器的纯文本版
+      check_report: json              # 代码体检结果
+      feedback:     longtext          # 最近一次审稿意见
+      history:      json              # 每一版稿件与意见，只追加
+      produced_url: url               # 出品后的成片 / 图片链接
+      approved_at:  datetime
+      notes:        longtext
+
+link_types:
+  piece_of:       { from: content_piece, to: topic, label: 所属选题 }
+  piece_cites:    { from: content_piece, to: [case, method, insight, practice_log, pain_point, tool, concept], label: 内容引用, require_verified: true }
+  published_from: { from: publish_record, to: content_piece, label: 发布的内容件 }
+  topic_from:   { from: topic, to: [source_doc, insight, pain_point, case, method, practice_log, tool, concept, requirement_analysis], label: 选题来源 }
+  published_as: { from: publish_record, to: topic, label: 发布的选题 }
+
+action_types:
+  propose_topic:
+    domain: market
+    label: 提出候选选题
+    mode: manual
+    params: { title: "text!", angle: longtext, target_platforms: "text[]", sources: "text[]" }
+    handler: propose_topic
+  finalize_topic:
+    label: 选题定档（人工闸门）
+    mode: manual
+    gate: true
+    target: topic
+    precondition: { status: [candidate] }
+    set: { status: scheduled, finalized_at: $now, finalized_by: $actor }
+  finalize_topics:
+    domain: market
+    label: 批量选题定档（人工闸门，一周一次审批）
+    mode: manual
+    gate: true
+    params: { targets: "text[]!" }
+    handler: finalize_topics        # 一个审批码、一次 PIN 定一周的选题
+  plan_week:
+    domain: market
+    label: 出下周候选选题（AI，直接写入候选池）
+    mode: manual
+    direct: true
+    params: { count: int, focus: longtext }
+    handler: plan_week              # 从行业空白 / 自有案例 / 实操记录 / 洞见里出候选选题，并建议拆成哪些形态
+  schedule_pieces:
+    domain: market
+    label: 按配比排产内容件（直接写入）
+    mode: manual
+    direct: true
+    params: { start: datetime, days: int, topics: "text[]" }
+    handler: schedule_pieces        # 已定档选题 × profile.goals.format_mix → 7 天的内容件；真人口播按每日硬指标
+  draft_piece:
+    label: 起草内容件（AI 初稿 + 代码体检）
+    mode: manual
+    direct: true
+    target: content_piece
+    precondition: { status: [planned, check_failed] }
+    handler: draft_piece
+  review_piece:
+    label: 审稿（通过 / 要修改）
+    mode: manual
+    direct: true
+    target: content_piece
+    precondition: { status: [in_review] }
+    params: { decision: "enum:review_decision!", feedback: longtext }
+    handler: review_piece
+  revise_piece:
+    label: 按审稿意见改稿（AI + 代码体检）
+    mode: manual
+    direct: true
+    target: content_piece
+    precondition: { status: [changes_requested] }
+    handler: revise_piece
+  mark_produced:
+    label: 登记已出品（小云雀 / 豆包 / 拍摄完成）
+    mode: manual
+    direct: true
+    target: content_piece
+    precondition: { status: [approved] }
+    params: { url: url, note: longtext }
+    handler: mark_produced
+  publish_piece:
+    label: 登记内容件发布（可多平台各登记一次）
+    mode: manual
+    direct: true
+    target: content_piece
+    precondition: { status: [approved, produced, published] }
+    params: { platform: "enum:platform", url: url, account: text, published_at: datetime }
+    handler: publish_piece
+  drop_piece:
+    label: 放弃内容件
+    mode: manual
+    direct: true
+    target: content_piece
+    precondition: { status: [planned, in_review, check_failed, changes_requested, approved, produced] }
+    set: { status: dropped }
+  mark_published:
+    label: 登记发布
+    mode: manual
+    target: topic
+    precondition: { status: [scheduled, published] }   # B-4：候选选题必须先过定档闸门
+    params: { platform: "enum:platform!", format: "enum:content_format", keyword: text, url: url, account: text, published_at: datetime }
+    set: { status: published }
+    creates:
+      - type: publish_record
+        props: { title: "$target.title", platform: $param.platform, format: $param.format, keyword: $param.keyword, account: $param.account, url: $param.url, published_at: $param.published_at }
+        link: { type: published_as, from: $new, to: $target }
+  backfill_metrics:
+    label: 回填发布数据
+    mode: manual
+    target: publish_record
+    params: { stage: "text!", views: int, likes: int, comments: int, favorites: int, new_followers: int, completion_rate: number, leads_dm: int, leads_contact: int }
+    handler: backfill_metrics       # stage = 24h / 72h / 7d，写入对应播放字段；其余为最新值
+  backfill_batch:
+    domain: market
+    label: 批量回填发布数据（截图识别后，直接写入）
+    mode: manual
+    direct: true
+    params: { items: "json!", stage: text }
+    handler: backfill_batch         # items=[{match: 标题/链接/发布记录id, platform?, stage?, views, likes, …}]；匹配不唯一的不写、列出候选
+
+functions:
+  review_queue:
+    label: 待审稿件
+    description: 待审的内容件（要点 + 体检提示），按排期排序；另列体检未过与待修改的数量
+    params: { limit: int }
+  content_plan:
+    label: 内容排期
+    description: 未来 7 天每天的内容件与状态、各形态对照配比、每日真人口播缺口、已定档未排产的选题
+    params: { start: text }
+  piece_package:
+    label: 创作包
+    description: 一条内容件的完整创作包（可直接复制进小云雀 / 豆包）与体检结果
+    params: { id: "text!" }
+  format_performance:
+    label: 形态表现
+    description: 近 N 天（默认 30）各内容形态与各私信关键词的发布数、播放、线索数与线索率；数据够了给出下周配比调整建议
+    params: { days: int }
+  content_performance:
+    label: 内容表现
+    description: 已发布内容按获客与播放排序，附选题与它来自哪些知识
+    params: { limit: int }

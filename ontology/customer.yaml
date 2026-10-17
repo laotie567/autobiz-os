@@ -1,0 +1,126 @@
+# 客户域：线索 → 客户组织。精简版（2026-10-04）：商机并入售前方案（方案状态即销售阶段），联系人写在线索 / 客户上。
+# 客户没有系统账号（CONTEXT.md）。
+
+enums:
+  org_type:     { enterprise: 企业, studio: 工作室, individual: 个人, soe: 国企/平台公司, gov: 政府/事业单位 }
+  lead_status:  { new: 新线索, following: 跟进中, converted: 已转客户, lost: 已流失 }
+  consult_verdict: { go: 接, no_go: 不接, watch: 观察 }   # 顾问咨询结论（筛选闸口，软提醒）
+
+object_types:
+  organization:
+    label: 客户
+    domain: customer
+    title: name
+    embed: [name, notes]
+    managed: [consult_verdict, consult_reason, consulted_at, last_contact_at, contact_log]   # 由 record_consultation / log_contact 维护
+    properties:
+      name:      text!
+      org_type:  enum:org_type
+      contacts:  text           # 联系人与联系方式
+      referrer:  text           # 居间介绍人（及约定）
+      notes:     longtext       # 老板认知、团队情况等（筛选依据）
+      business_line:   enum:business_line   # S1：属于哪条业务线（项目 / 订单默认继承）
+      consult_verdict: enum:consult_verdict # 最近一次顾问咨询结论
+      consult_reason:  longtext
+      consulted_at:    datetime
+      next_followup_at: datetime            # 下次跟进（进每日简报）
+      last_contact_at:  datetime
+      contact_log:      json                # [{at, note}] 沟通记录，只追加
+
+  lead:
+    label: 线索
+    domain: customer
+    title: title
+    embed: [title, intent]
+    initial: { status: new }        # B-1：status 受流程保护，通用新建只能写初始值
+    managed: [last_contact_at, contact_log]
+    properties:
+      title:    text!
+      platform: enum:platform
+      contact:  text
+      intent:   longtext        # 咨询首问 / 意向摘要（原话）
+      status:   enum:lead_status
+      business_line:    enum:business_line   # S1：有平台来源的线索默认 online
+      keyword:          text                 # 私信 / 评论关键词，如"选址"（S3 用于归因到内容）
+      next_followup_at: datetime
+      last_contact_at:  datetime
+      contact_log:      json
+      lost_reason:      text
+      attribution:      text                 # S3：来源内容的归因方式 keyword_auto（按关键词自动）/ manual（人工认领）
+
+link_types:
+  lead_from:      { from: lead, to: publish_record, label: 线索来源内容 }      # 市场 → 客户
+  lead_org:       { from: lead, to: organization, label: 转为客户 }
+  org_in:         { from: organization, to: industry, label: 所在行业 }        # 客户 → 知识
+  org_has_pain:   { from: organization, to: pain_point, label: 存在痛点 }
+
+action_types:
+  create_lead:
+    domain: customer
+    label: 登记线索
+    mode: manual
+    params: { title: "text!", platform: "enum:platform", intent: longtext, contact: text, source_publish: text,
+              keyword: text, business_line: "enum:business_line", next_in_days: int }
+    handler: create_lead            # source_publish = 带来这条线索的发布记录 id
+  quick_lead:
+    domain: customer
+    label: 快速登记线索（直接写入）
+    mode: manual
+    direct: true
+    params: { who: "text!", platform: "enum:platform", keyword: text, text: longtext, contact: text,
+              business_line: "enum:business_line", source_publish: text, next_in_days: int }
+    handler: quick_lead             # 一句话录入：昵称 + 平台 + 关键词 + 原话；默认明天跟进
+  log_contact:
+    label: 记一次跟进（直接写入）
+    mode: manual
+    direct: true
+    target: [lead, organization]
+    params: { note: "longtext!", next_in_days: int, next_at: datetime }
+    handler: log_contact            # 追加沟通记录；新线索自动转"跟进中"；定下次跟进日
+  attribute_lead:
+    label: 认领线索来源（直接写入）
+    mode: manual
+    direct: true
+    target: lead
+    params: { publish: "text!" }
+    handler: attribute_lead         # publish = 发布记录 id；会替换原有的来源关联
+  mark_lead_lost:
+    label: 线索流失
+    mode: manual
+    direct: true
+    target: lead
+    precondition: { status: [new, following] }
+    params: { reason: "text!" }
+    set: { status: lost, lost_reason: $param.reason }
+  record_consultation:
+    label: 记录顾问咨询结论（直接写入）
+    mode: manual
+    direct: true
+    target: organization
+    params: { verdict: "enum:consult_verdict!", reason: longtext, hours: number, fee: number, paid_at: datetime }
+    handler: record_consultation    # 接 / 不接 / 观察 + 理由；带咨询费时同时登记一笔顾问咨询订单
+  convert_lead:
+    label: 线索转客户
+    mode: manual
+    target: lead
+    precondition: { status: [new, following] }
+    params: { org_name: "text!", org_type: "enum:org_type", industry: text, confirm_new: bool }
+    handler: convert_lead           # 建（或复用）客户并关联行业；名字与已有客户相近时先给候选（C-6），确认新客户才带 confirm_new
+
+functions:
+  unattributed_leads:
+    label: 待认领线索
+    description: 近 N 天（默认 14）没有关联到任何发布内容的线索，附同平台最近发布供认领
+    params: { days: int }
+  conversion_stats:
+    label: 实测转化
+    description: 近 N 天（默认 30）线索的实际去向：跟进中 / 转客户 / 做过咨询 / 成交 / 流失，及成交金额；数据不足 30 天时只给计数
+    params: { days: int }
+  followup_today:
+    label: 今日跟进
+    description: 今天该跟进 / 已超期的线索与客户，以及超过 24 小时还没跟进过的新线索
+    params: {}
+  pipeline:
+    label: 销售漏斗
+    description: 线索按状态分布，方案按状态（草稿 / 已发送 / 已接受）的数量与金额，附客户与来源内容
+    params: {}

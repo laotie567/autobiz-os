@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# 提交前：本体必须能编译、测试必须全过（任何人 / 任何模型写的代码都一样）
+export PATH="$HOME/.local/bin:$PATH"   # E-1：不再写死 /opt/homebrew（Linux/CI 通用）
+cd "$(git rev-parse --show-toplevel)"
+uv run autobiz check >/dev/null || { echo "✗ 本体校验失败，拒绝提交"; exit 1; }
+AUTOBIZ_FAKE_EMBED=1 uv run pytest -q >/tmp/autobiz-precommit.log 2>&1 || { tail -15 /tmp/autobiz-precommit.log; echo "✗ 测试未通过，拒绝提交"; exit 1; }

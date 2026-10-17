@@ -1,0 +1,120 @@
+# AutoBiz OS 统一本体 · 共享定义
+#
+# 本体 = ontology/*.yaml 全部文件的合集，是业务世界的唯一权威定义（ADR-0006 / 0009）。
+# 本体编译器（autobiz/ontology.py）加载并校验全部文件，生成：数据库视图、Action 引擎规则、MCP 工具。
+#
+# ── 文件格式约定 ───────────────────────────────────
+# object_types.<name>:
+#   label        中文名
+#   domain       所属业务域：knowledge | market | customer | presales | delivery
+#   title        展示名取自哪个属性
+#   extractable  true = AI 可自动创建（默认 verified=false，对外使用前须 verify_object）
+#   embed        参与语义检索向量化的属性
+#   managed      生命周期字段（B-1）：只能由流程行动修改；被任何 action 的 precondition/set
+#                引用的字段会自动并入，handler 内写的字段需在此显式声明
+#   initial      通用 create_object 允许写入的初始值（如 {status: draft}）
+#   properties   属性名: 类型。类型：text longtext int number bool datetime url text[] json enum:<枚举名>
+#                类型后加 ? 表示可空（默认都可空，! 表示必填）
+# 每个对象另有系统字段（不用声明）：id type title aliases verified verified_at confidence
+#   extracted_by evidence origin(seed|human|ai) created_at updated_at embedding
+#
+# link_types.<name>: { from, to, label, require_verified }   from / to 可以是类型名或列表；
+#                    require_verified=true 表示 to 端对象必须已确认（对外出口闸门）
+#
+# action_types.<name>:
+#   label / mode(auto|manual) / gate(是否人工闸门)
+#   target       作用的对象类型（调用时传 target=对象 id）；缺省表示不针对已有对象
+#   params       额外参数 名: 类型
+#   precondition 目标对象当前属性的允许值 { 属性: [值...] }
+#   set          写入目标对象 { 属性: 值 | $param.<名> | $now | $actor }
+#   creates      同时新建对象并连线 [{ type, props, link: {type, from: $new|$target, to: $new|$target} }]
+#   direct       true = 只产生草稿，Agent 无需预览直接执行（把关在后续闸门）
+#   handler      复杂逻辑由 Python 实现（autobiz/handlers.py 中同名函数），与上面的声明式规则二选一
+#
+# functions.<name>: 只读查询，{ label, params, description }，在 autobiz/functions.py 实现
+# ─────────────────────────────────────────────────
+
+version: "0.4"
+
+# D-3：业务域也是本体的一部分。粉丝加新域（如 inventory 库存）在此 extend，
+# 再在 $AUTOBIZ_HOME/ontology/ 里声明 domain: inventory 的对象类型即可。
+domains:
+  knowledge: 知识
+  market:    内容获客
+  customer:  客户
+  presales:  售前
+  delivery:  交付
+
+enums:
+  platform:        { douyin: 抖音, shipinhao: 视频号, xiaohongshu: 小红书 }
+  source_channel:  { x_clip: X剪藏, blogger_plugin: 博主插件, community_note: 社群笔记, feishu_doc: 飞书文档, feishu_minutes: 飞书妙记, quick_note: 随手记, manual: 手动录入 }
+  willingness:     { high: 高, medium: 中, low: 低, unknown: 未知 }
+  # S1（ADR-0015）：业务线。客户 / 线索 / 项目 / 订单都标业务线；收入目标只统计 profile.goals.revenue_lines 里的线
+  business_line:   { online: 线上获客业务, offline: 线下项目, partner: 合伙业务 }
+  # S1：内容形态（发布记录 / 后续内容件共用）。avatar_talk 预留：数字人接口跑通前配比为 0
+  content_format:  { live_talk: 真人口播, avatar_talk: 数字人口播, motion: 动效视频, science: 科普视频,
+                     explainer: 讲解视频, image_video: 图文视频, image_post: 图文混排, article: 图文长文 }
+
+roles:
+  owner:     { label: 老板本人, actions: "*" }              # 老板亲自操作；启用审批 PIN 后闸门同样要过 approve
+  agent:     { label: AI 助手, actions: "*", deny_gate: true }   # B-5：CLI/MCP 默认身份；闸门只能预览+转审批码，不能自行确认
+  assistant: { label: 助理, actions: [ingest_source, capture_note, log_practice, create_object, update_object, link_objects,
+                                       mark_published, backfill_metrics, create_lead, capture_requirement, record_payment ] }
+  system:    { label: 系统 / 定时任务, actions: [ingest_source, extract_knowledge, propose_topic, create_object, update_object, link_objects] }
+
+# 所有业务域都能用的通用行动（handler 在代码中实现）
+action_types:
+  create_object:
+    label: 新建对象
+    mode: manual
+    params: { type: "text!", props: "json!", links: json }
+    handler: create_object
+  update_object:
+    label: 修改对象属性
+    mode: manual
+    params: { target: "text!", props: "json!" }
+    handler: update_object
+  link_objects:
+    label: 建立关系
+    mode: manual
+    params: { link_type: "text!", from: "text!", to: "text!" }
+    handler: link_objects
+  unlink_objects:
+    label: 解除关系
+    mode: manual
+    params: { link_type: "text!", from: "text!", to: "text!" }
+    handler: unlink_objects
+  verify_object:
+    label: 确认知识（对外使用前的闸门，可批量）
+    mode: manual
+    gate: true
+    params: { targets: "text[]!" }
+    handler: verify_object            # 用到时再确认：出方案时系统会列出相关但未确认的知识 id
+  merge_objects:
+    label: 合并重复对象
+    mode: manual
+    gate: true
+    params: { keep: "text!", absorb: "text!" }
+    handler: merge_objects
+
+functions:
+  overview:
+    label: 系统总览
+    description: 各类对象数量与待办（候选选题、待回填数据、待跟进线索、售前下一步、待收款）
+    params: {}
+  search:
+    label: 语义搜索
+    description: 按意思搜索全部对象，可限定类型，返回对象摘要与相似度
+    params: { query: "text!", types: "text[]", limit: int }
+  get_object:
+    label: 查看对象
+    description: 查看一个对象的全部属性以及它的直接关系（上下游对象）
+    params: { id: "text!" }
+  goal_progress:
+    label: 经营目标进度
+    description: 本月收入（只算目标业务线）/ 本月线索 / 本周发布与各形态 / 今日真人口播，对照目标与时间进度；其他业务线单列
+    params: {}
+  trace:
+    label: 溯源 / 追踪
+    description: 沿关系链向上游或下游追踪，回答"它从哪里来 / 带来了什么"，如 线索 → 发布 → 选题 → 知识
+    params: { id: "text!", direction: text, depth: int }

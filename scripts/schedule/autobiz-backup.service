@@ -1,0 +1,5 @@
+[Unit]
+Description=AutoBiz daily backup
+[Service]
+Type=oneshot
+ExecStart=/bin/bash SCRIPTS_DIR/backup.sh
